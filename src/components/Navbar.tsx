@@ -1,14 +1,22 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useVoiceControl } from '@/hooks/useVoiceControl';
+import VoiceControl from '@/components/VoiceControl';
 
 const Navbar = () => {
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const handleVoiceCommand = useCallback((command: string, params?: any) => {
+    console.log('Navbar voice command:', command, params);
+  }, []);
+
+  const [voiceState, voiceActions] = useVoiceControl(handleVoiceCommand);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -40,7 +48,7 @@ const Navbar = () => {
           <div className="flex-shrink-0 relative group">
             <Link href="/" className="text-white font-bold text-xl flex items-center gap-2">
               <div className="relative">
-                <span className="text-2xl">FP</span>
+                <span className="text-2xl">vX</span>
                 {/* Animated accent */}
                 <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-white group-hover:w-full transition-all duration-300"></span>
                 <span className="absolute -top-1 right-0 w-0 h-[1px] bg-white group-hover:w-full transition-all duration-300 delay-100"></span>
@@ -50,13 +58,24 @@ const Navbar = () => {
                 {/* Glowing dot */}
                 <span className="absolute -right-2 -top-2 w-1 h-1 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse"></span>
               </div>
-              <span className="hidden sm:block">Futuristic Player</span>
+              <span className="hidden sm:block">vcXvp</span>
             </Link>
+          </div>
+
+          {/* Command Hint */}
+          <div className="hidden md:flex items-center justify-center flex-1">
+            <div className="px-3 py-1 bg-gray-900/50 border border-gray-700/50 rounded-md text-xs text-gray-400 backdrop-blur-sm relative group">
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border border-gray-600 rounded text-center leading-3 text-[10px] group-hover:border-white group-hover:text-white transition-colors">/</span>
+                <span className="group-hover:text-white transition-colors">Command Prompt</span>
+              </span>
+              <div className="absolute -inset-px bg-gradient-to-r from-transparent via-gray-600/20 to-transparent rounded-md opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            </div>
           </div>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:items-center">
-            <div className="ml-10 flex items-baseline space-x-4">
+            <div className="flex items-baseline space-x-4 mr-4">
               {navItems.map((item, index) => {
                 const isActive = pathname === item.path;
                 return (
@@ -92,6 +111,26 @@ const Navbar = () => {
                   </div>
                 );
               })}
+            </div>
+            
+            {/* Voice Control */}
+            <VoiceControl
+              isListening={voiceState.isListening}
+              isSupported={voiceState.isSupported}
+              status={voiceState.status}
+              lastCommand={voiceState.lastCommand}
+              voiceFeedbackEnabled={true}
+              onToggleListening={voiceActions.toggleListening}
+              onToggleVoiceFeedback={() => {}}
+              onShowCommands={() => {}}
+            />
+          </div>
+
+          {/* Mobile Command Hint */}
+          <div className="md:hidden flex items-center mr-4">
+            <div className="px-2 py-1 bg-gray-900/50 border border-gray-700/50 rounded text-xs text-gray-400">
+              <span className="w-3 h-3 border border-gray-600 rounded text-center leading-2 text-[8px] inline-block mr-1">/</span>
+              <span>CMD</span>
             </div>
           </div>
 

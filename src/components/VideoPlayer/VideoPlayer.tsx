@@ -11,6 +11,9 @@ import {
   FaRegWindowRestore, FaChartLine, FaDownload, FaEye, 
   FaCog, FaCompress, FaExpand, FaKeyboard 
 } from 'react-icons/fa';
+import { useVoiceControl } from '@/hooks/useVoiceControl';
+import VoiceControl from '@/components/VoiceControl';
+import VoiceCommandsModal from '@/components/VoiceCommandsModal';
 
 interface VideoPlayerProps {
   src: string;
@@ -38,6 +41,83 @@ interface ExtendedDocument extends Document {
   webkitExitFullscreen?: () => Promise<void>;
   mozCancelFullScreen?: () => Promise<void>;
   msExitFullscreen?: () => Promise<void>;
+}
+
+// Speech Recognition API types
+declare global {
+  interface Window {
+    SpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: typeof SpeechRecognition;
+  }
+
+  interface SpeechRecognition extends EventTarget {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    maxAlternatives: number;
+    serviceURI: string;
+    grammars: SpeechGrammarList;
+    start(): void;
+    stop(): void;
+    abort(): void;
+    onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
+    onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
+    onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+    onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+    onnomatch: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+    onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+    onsoundstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+    onsoundend: ((this: SpeechRecognition, ev: Event) => any) | null;
+    onspeechstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+    onspeechend: ((this: SpeechRecognition, ev: Event) => any) | null;
+    onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  }
+
+  var SpeechRecognition: {
+    prototype: SpeechRecognition;
+    new(): SpeechRecognition;
+  };
+
+  interface SpeechRecognitionEvent extends Event {
+    readonly resultIndex: number;
+    readonly results: SpeechRecognitionResultList;
+  }
+
+  interface SpeechRecognitionErrorEvent extends Event {
+    readonly error: string;
+    readonly message: string;
+  }
+
+  interface SpeechRecognitionResultList {
+    readonly length: number;
+    item(index: number): SpeechRecognitionResult;
+    [index: number]: SpeechRecognitionResult;
+  }
+
+  interface SpeechRecognitionResult {
+    readonly isFinal: boolean;
+    readonly length: number;
+    item(index: number): SpeechRecognitionAlternative;
+    [index: number]: SpeechRecognitionAlternative;
+  }
+
+  interface SpeechRecognitionAlternative {
+    readonly transcript: string;
+    readonly confidence: number;
+  }
+
+  interface SpeechGrammarList {
+    readonly length: number;
+    item(index: number): SpeechGrammar;
+    [index: number]: SpeechGrammar;
+    addFromURI(src: string, weight?: number): void;
+    addFromString(string: string, weight?: number): void;
+  }
+
+  interface SpeechGrammar {
+    src: string;
+    weight: number;
+  }
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -94,6 +174,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [effectsIntensity, setEffectsIntensity] = useState(0.5);
   const [availableQualities] = useState(['auto', '8K', '4K', '2K', '1080p', '720p', '480p', '360p']);
   const [showVideoInfo, setShowVideoInfo] = useState(false);
+  const [showVoiceCommands, setShowVoiceCommands] = useState(false);
+  const [voiceFeedbackEnabled, setVoiceFeedbackEnabled] = useState(true);
   const [videoInfo, setVideoInfo] = useState<VideoInfo>({
     resolution: '',
     bitrate: '',
@@ -108,6 +190,460 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     lastWatchTimeUpdate: Date.now()
   });
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Custom controls handlers - moved before handleVoiceCommand
+  const togglePlay = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    if (player.paused() || player.ended()) {
+      player.play().catch((err: Error) => {
+        console.error('Error playing video:', err);
+      });
+    } else {
+      player.pause();
+    }
+  }, []);
+
+  const skipForward = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    
+    player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
+  }, []);
+
+  const skipBackward = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    
+    player.currentTime(Math.max(0, player.currentTime() - 10));
+  }, []);
+
+  // Change playback speed
+  const changePlaybackSpeed = (speed: number) => {
+    const player = playerRef.current;
+    if (!player) return;
+    
+    player.playbackRate(speed);
+    setPlaybackSpeed(speed);
+    setShowSettings(false);
+  };
+
+  const handleFullscreen = useCallback(() => {
+    const player = playerRef.current;
+    const container = containerRef.current;
+    if (!player || !container) return;
+    
+    try {
+      if (!isFullscreen) {
+        const extendedContainer = container as ExtendedHTMLElement;
+        if (container.requestFullscreen) {
+          container.requestFullscreen();
+        } else if (extendedContainer.mozRequestFullScreen) {
+          extendedContainer.mozRequestFullScreen();
+        } else if (extendedContainer.webkitRequestFullscreen) {
+          extendedContainer.webkitRequestFullscreen();
+        } else if (extendedContainer.msRequestFullscreen) {
+          extendedContainer.msRequestFullscreen();
+        }
+        setIsFullscreen(true);
+      } else {
+        const extendedDocument = document as ExtendedDocument;
+        if (document.fullscreenElement ||
+            extendedDocument.webkitFullscreenElement ||
+            extendedDocument.mozFullScreenElement ||
+            extendedDocument.msFullscreenElement) {
+
+          const exitPromise = document.exitFullscreen ?
+            Promise.resolve(document.exitFullscreen()) :
+            extendedDocument.webkitExitFullscreen ?
+              Promise.resolve(extendedDocument.webkitExitFullscreen()) :
+              extendedDocument.mozCancelFullScreen ?
+                Promise.resolve(extendedDocument.mozCancelFullScreen()) :
+                extendedDocument.msExitFullscreen ?
+                  Promise.resolve(extendedDocument.msExitFullscreen()) :
+                  Promise.resolve();
+          
+          exitPromise
+            .catch((err: Error) => {
+              console.error('Error exiting fullscreen:', err);
+            })
+            .finally(() => {
+              setIsFullscreen(false);
+              setShowControls(true);
+            });
+        } else {
+          setIsFullscreen(false);
+          setShowControls(true);
+        }
+      }
+    } catch (error: unknown) {
+      console.error('Fullscreen error:', error);
+      setIsFullscreen(!isFullscreen);
+      setShowControls(true);
+    }
+  }, [isFullscreen]);
+
+  const togglePictureInPicture = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    
+    const video = player.el().querySelector('video');
+    if (!video) return;
+    
+    try {
+      if (document.pictureInPictureElement) {
+        document.exitPictureInPicture()
+          .catch((err: Error) => {
+            console.error('Error exiting Picture-in-Picture mode:', err);
+          });
+      } else {
+        video.requestPictureInPicture()
+          .catch((err: Error) => {
+            console.error('Error entering Picture-in-Picture mode:', err);
+          });
+      }
+    } catch (error: unknown) {
+      console.error('Picture-in-Picture error:', error);
+    }
+  }, []);
+
+  const takeScreenshot = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    
+    try {
+      const video = player.el().querySelector('video');
+      if (!video) return;
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      const dataUrl = canvas.toDataURL('image/png');
+      
+      setScreenshotUrl(dataUrl);
+      setShowScreenshot(true);
+    } catch (error: unknown) {
+      console.error('Screenshot error:', error);
+    }
+  }, []);
+
+  const jumpToBookmark = (time: number) => {
+    const player = playerRef.current;
+    if (!player) return;
+    
+    player.currentTime(time);
+    if (player.paused()) {
+      player.play().catch((err: Error) => console.error('Error playing video:', err));
+    }
+  };
+
+  const changeQuality = (quality: string) => {
+    setCurrentQuality(quality);
+    
+    let resolution;
+    let bitrate;
+    let frameRate;
+    
+    switch (quality) {
+      case '8K':
+        resolution = '7680x4320 (8K)';
+        bitrate = `${Math.floor(Math.random() * 20 + 80)}.${Math.floor(Math.random() * 9)}Mbps`;
+        frameRate = '60fps';
+        break;
+      case '4K':
+        resolution = '3840x2160 (4K)';
+        bitrate = `${Math.floor(Math.random() * 15 + 40)}.${Math.floor(Math.random() * 9)}Mbps`;
+        frameRate = '60fps';
+        break;
+      case '2K':
+        resolution = '2560x1440 (2K)';
+        bitrate = `${Math.floor(Math.random() * 10 + 20)}.${Math.floor(Math.random() * 9)}Mbps`;
+        frameRate = '60fps';
+        break;
+      case '1080p':
+        resolution = '1920x1080 (1080p)';
+        bitrate = `${Math.floor(Math.random() * 5 + 8)}.${Math.floor(Math.random() * 9)}Mbps`;
+        frameRate = '60fps';
+        break;
+      case '720p':
+        resolution = '1280x720 (720p)';
+        bitrate = `${Math.floor(Math.random() * 3 + 5)}.${Math.floor(Math.random() * 9)}Mbps`;
+        frameRate = '30fps';
+        break;
+      case '480p':
+        resolution = '854x480 (480p)';
+        bitrate = `${Math.floor(Math.random() * 2 + 2)}.${Math.floor(Math.random() * 9)}Mbps`;
+        frameRate = '30fps';
+        break;
+      case '360p':
+        resolution = '640x360 (360p)';
+        bitrate = `${Math.floor(Math.random() * 1 + 1)}.${Math.floor(Math.random() * 9)}Mbps`;
+        frameRate = '30fps';
+        break;
+      case 'auto':
+      default:
+        const qualities = ['8K', '4K', '2K', '1080p', '720p', '480p', '360p'];
+        const randomIndex = Math.floor(Math.random() * 4);
+        const autoQuality = qualities[randomIndex];
+        
+        if (autoQuality !== 'auto') {
+          changeQuality(autoQuality);
+          return;
+        } else {
+          resolution = '1920x1080 (1080p)';
+          bitrate = '8.5Mbps';
+          frameRate = '60fps';
+        }
+    }
+    
+    setVideoInfo(prev => ({
+      ...prev,
+      resolution,
+      bitrate,
+      frameRate
+    }));
+    
+    setShowSettings(false);
+    setShowQualityNotification(true);
+    setTimeout(() => setShowQualityNotification(false), 3000);
+  };
+
+  // Voice Control Integration
+  const handleVoiceCommand = useCallback((command: string, params?: any) => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    switch (command) {
+      case 'play':
+        player.play().catch(console.error);
+        break;
+      case 'pause':
+        player.pause();
+        break;
+      case 'togglePlay':
+        togglePlay();
+        break;
+      case 'restart':
+        player.currentTime(0);
+        player.play().catch(console.error);
+        break;
+      case 'mute':
+        player.muted(true);
+        setIsMuted(true);
+        break;
+      case 'unmute':
+        player.muted(false);
+        setIsMuted(false);
+        break;
+      case 'skipForward':
+        skipForward();
+        break;
+      case 'skipBackward':
+        skipBackward();
+        break;
+      case 'nextFrame':
+        if (player.paused()) {
+          player.currentTime(Math.min(player.duration(), player.currentTime() + 0.04));
+        }
+        break;
+      case 'previousFrame':
+        if (player.paused()) {
+          player.currentTime(Math.max(0, player.currentTime() - 0.04));
+        }
+        break;
+      case 'volumeUp':
+        const newVolumeUp = Math.min(1, player.volume() + 0.1);
+        player.volume(newVolumeUp);
+        setVolume(newVolumeUp);
+        if (isMuted && newVolumeUp > 0) {
+          player.muted(false);
+          setIsMuted(false);
+        }
+        break;
+      case 'volumeDown':
+        const newVolumeDown = Math.max(0, player.volume() - 0.1);
+        player.volume(newVolumeDown);
+        setVolume(newVolumeDown);
+        if (newVolumeDown === 0) {
+          player.muted(true);
+          setIsMuted(true);
+        }
+        break;
+      case 'volumeMax':
+        player.volume(1);
+        setVolume(1);
+        player.muted(false);
+        setIsMuted(false);
+        break;
+      case 'volumeMin':
+        player.volume(0);
+        setVolume(0);
+        player.muted(true);
+        setIsMuted(true);
+        break;
+      case 'setVolume':
+        if (params?.volume !== undefined) {
+          const vol = Math.max(0, Math.min(100, params.volume)) / 100;
+          player.volume(vol);
+          setVolume(vol);
+          if (vol === 0) {
+            player.muted(true);
+            setIsMuted(true);
+          } else if (isMuted) {
+            player.muted(false);
+            setIsMuted(false);
+          }
+        }
+        break;
+      case 'speedUp':
+        const newSpeedUp = Math.min(4, playbackSpeed + 0.25);
+        changePlaybackSpeed(newSpeedUp);
+        break;
+      case 'speedDown':
+        const newSpeedDown = Math.max(0.25, playbackSpeed - 0.25);
+        changePlaybackSpeed(newSpeedDown);
+        break;
+      case 'normalSpeed':
+        changePlaybackSpeed(1);
+        break;
+      case 'doubleSpeed':
+        changePlaybackSpeed(2);
+        break;
+      case 'halfSpeed':
+        changePlaybackSpeed(0.5);
+        break;
+      case 'setSpeed':
+        if (params?.speed !== undefined) {
+          changePlaybackSpeed(params.speed);
+        }
+        break;
+      case 'qualityAuto':
+        changeQuality('auto');
+        break;
+      case 'quality8k':
+        changeQuality('8K');
+        break;
+      case 'quality4k':
+        changeQuality('4K');
+        break;
+      case 'quality1080p':
+        changeQuality('1080p');
+        break;
+      case 'quality720p':
+        changeQuality('720p');
+        break;
+      case 'quality480p':
+        changeQuality('480p');
+        break;
+      case 'qualityBest':
+        changeQuality('8K');
+        break;
+      case 'qualityLowest':
+        changeQuality('360p');
+        break;
+      case 'fullscreen':
+        if (!isFullscreen) handleFullscreen();
+        break;
+      case 'exitFullscreen':
+        if (isFullscreen) handleFullscreen();
+        break;
+      case 'pictureInPicture':
+        togglePictureInPicture();
+        break;
+      case 'screenshot':
+        takeScreenshot();
+        break;
+      case 'addBookmark':
+        setShowBookmarkInput(true);
+        break;
+      case 'addNamedBookmark':
+        if (params?.name) {
+          const newBookmark = {
+            time: player.currentTime(),
+            label: params.name
+          };
+          setBookmarks(prev => [...prev, newBookmark]);
+        }
+        break;
+      case 'gotoBookmark':
+        if (params?.name) {
+          const bookmark = bookmarks.find(b => b.label.toLowerCase().includes(params.name.toLowerCase()));
+          if (bookmark) {
+            jumpToBookmark(bookmark.time);
+          }
+        }
+        break;
+      case 'showBookmarks':
+        // Bookmarks are always visible when they exist
+        break;
+      case 'showInfo':
+        setShowVideoInfo(true);
+        break;
+      case 'showStats':
+        setShowStatistics(true);
+        break;
+      case 'showChapters':
+        setShowChapters(true);
+        break;
+      case 'hideInfo':
+        setShowVideoInfo(false);
+        setShowStatistics(false);
+        setShowChapters(false);
+        setShowSettings(false);
+        break;
+      case 'announceTime':
+        // This would be handled by voice feedback
+        break;
+      case 'announceDuration':
+        // This would be handled by voice feedback
+        break;
+      case 'showSettings':
+        setShowSettings(true);
+        break;
+      case 'showShortcuts':
+        setShowShortcutGuide(true);
+        break;
+      case 'showHistory':
+        setShowHistory(true);
+        break;
+      case 'effectsOn':
+        setShowVisualEffects(true);
+        break;
+      case 'effectsOff':
+        setShowVisualEffects(false);
+        break;
+      case 'jumpToTime':
+        if (params?.time !== undefined) {
+          player.currentTime(Math.min(player.duration(), params.time));
+        }
+        break;
+      case 'jumpToPercent':
+        if (params?.percent !== undefined) {
+          const time = (params.percent / 100) * player.duration();
+          player.currentTime(time);
+        }
+        break;
+      case 'voiceOff':
+        // This will be handled by the voice control hook
+        break;
+      case 'voiceHelp':
+        setShowVoiceCommands(true);
+        break;
+      default:
+        console.log('Unknown voice command:', command);
+    }
+  }, [togglePlay, skipForward, skipBackward, playbackSpeed, changePlaybackSpeed, 
+      isFullscreen, handleFullscreen, togglePictureInPicture, takeScreenshot, 
+      bookmarks, jumpToBookmark, isMuted]);
+
+  const [voiceState, voiceActions] = useVoiceControl(handleVoiceCommand);
 
   // Check if the browser supports the video format
   const validateBrowserSupport = useCallback((type: string): boolean => {
@@ -290,85 +826,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // seekTo function moved to avoid duplication
 
-  // Change playback speed
-  const changePlaybackSpeed = (speed: number) => {
-    const player = playerRef.current;
-    if (!player) return;
-    
-    player.playbackRate(speed);
-    setPlaybackSpeed(speed);
-    setShowSettings(false);
-  };
+  // changePlaybackSpeed function moved above
 
-  // jumpToMarker function moved to avoid duplication
+  // handleFullscreen function moved above
 
-  const handleFullscreen = useCallback(() => {
-    const player = playerRef.current;
-    const container = containerRef.current;
-    if (!player || !container) return;
-    
-    try {
-      if (!isFullscreen) {
-        // Request fullscreen
-        const extendedContainer = container as ExtendedHTMLElement;
-        if (container.requestFullscreen) {
-          container.requestFullscreen();
-        } else if (extendedContainer.mozRequestFullScreen) {
-          extendedContainer.mozRequestFullScreen();
-        } else if (extendedContainer.webkitRequestFullscreen) {
-          extendedContainer.webkitRequestFullscreen();
-        } else if (extendedContainer.msRequestFullscreen) {
-          extendedContainer.msRequestFullscreen();
-        }
-        setIsFullscreen(true);
-      } else {
-        // Exit fullscreen
-        const extendedDocument = document as ExtendedDocument;
-        if (document.fullscreenElement ||
-            extendedDocument.webkitFullscreenElement ||
-            extendedDocument.mozFullScreenElement ||
-            extendedDocument.msFullscreenElement) {
-
-          const exitPromise = document.exitFullscreen ?
-            Promise.resolve(document.exitFullscreen()) :
-            extendedDocument.webkitExitFullscreen ?
-              Promise.resolve(extendedDocument.webkitExitFullscreen()) :
-              extendedDocument.mozCancelFullScreen ?
-                Promise.resolve(extendedDocument.mozCancelFullScreen()) :
-                extendedDocument.msExitFullscreen ?
-                  Promise.resolve(extendedDocument.msExitFullscreen()) :
-                  Promise.resolve();
-          
-          exitPromise
-            .catch((err: Error) => {
-              console.error('Error exiting fullscreen:', err);
-            })
-            .finally(() => {
-              // Always update state regardless of whether the API call succeeded
-              setIsFullscreen(false);
-              setShowControls(true);
-            });
-        } else {
-          // Document is not in fullscreen, just update the state
-          setIsFullscreen(false);
-          setShowControls(true);
-        }
-      }
-    } catch (error: unknown) {
-      console.error('Fullscreen error:', error);
-      // Fallback: manually toggle the fullscreen class
-      setIsFullscreen(!isFullscreen);
-      setShowControls(true);
-    }
-  }, [isFullscreen]);
-
-  // changePlaybackSpeed function moved to avoid duplication
-
-  // skipForward function moved to avoid duplication
-
-  // skipBackward function moved to avoid duplication
-
-  // jumpToMarker function moved to avoid duplication
+  // Functions moved above to avoid initialization errors
 
   // Initialize video
   useEffect(() => {
@@ -512,61 +974,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, []);
 
-  // Toggle Picture-in-Picture mode
-  const togglePictureInPicture = useCallback(() => {
-    const player = playerRef.current;
-    if (!player) return;
-    
-    const video = player.el().querySelector('video');
-    if (!video) return;
-    
-    try {
-      if (document.pictureInPictureElement) {
-        document.exitPictureInPicture()
-          .catch((err: Error) => {
-            console.error('Error exiting Picture-in-Picture mode:', err);
-          });
-      } else {
-        video.requestPictureInPicture()
-          .catch((err: Error) => {
-            console.error('Error entering Picture-in-Picture mode:', err);
-          });
-      }
-    } catch (error: unknown) {
-      console.error('Picture-in-Picture error:', error);
-    }
-  }, []);
+  // togglePictureInPicture function moved above
 
-  // Take a screenshot of the current video frame
-  const takeScreenshot = useCallback(() => {
-    const player = playerRef.current;
-    if (!player) return;
-    
-    try {
-      const video = player.el().querySelector('video');
-      if (!video) return;
-      
-      // Create a canvas element to draw the video frame
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      // Draw the current video frame to the canvas
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      // Convert the canvas to a data URL
-      const dataUrl = canvas.toDataURL('image/png');
-      
-      // Set the screenshot URL and show the preview
-      setScreenshotUrl(dataUrl);
-      setShowScreenshot(true);
-    } catch (error: unknown) {
-      console.error('Screenshot error:', error);
-    }
-  }, []);
+  // takeScreenshot function moved above
 
 
 
@@ -685,19 +1095,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [duration]);
 
-  // Custom controls handlers
-  const togglePlay = useCallback(() => {
-    const player = playerRef.current;
-    if (!player) return;
-
-    if (player.paused() || player.ended()) {
-      player.play().catch((err: Error) => {
-        console.error('Error playing video:', err);
-      });
-      } else {
-      player.pause();
-    }
-  }, []);
+  // Custom controls handlers moved above
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const player = playerRef.current;
@@ -739,21 +1137,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // handleFullscreen function moved to avoid duplication
 
-  // changePlaybackSpeed function moved to avoid duplication
 
-  const skipForward = useCallback(() => {
-    const player = playerRef.current;
-    if (!player) return;
-    
-    player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
-  }, []);
-
-  const skipBackward = useCallback(() => {
-    const player = playerRef.current;
-    if (!player) return;
-    
-    player.currentTime(Math.max(0, player.currentTime() - 10));
-  }, []);
 
   // Picture-in-picture and screenshot functionality moved to earlier in the file
 
@@ -913,135 +1297,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Change video quality
-  const changeQuality = (quality: string) => {
-    // In a real implementation with adaptive streaming (HLS/DASH), you would switch quality here
-    setCurrentQuality(quality);
-    
-    // Simulate different resolutions based on quality
-    let resolution;
-    let bitrate;
-    let frameRate;
-    
-    switch (quality) {
-      case '8K':
-        resolution = '7680x4320 (8K)';
-        bitrate = `${Math.floor(Math.random() * 20 + 80)}.${Math.floor(Math.random() * 9)}Mbps`;
-        frameRate = '60fps';
-        break;
-      case '4K':
-        resolution = '3840x2160 (4K)';
-        bitrate = `${Math.floor(Math.random() * 15 + 40)}.${Math.floor(Math.random() * 9)}Mbps`;
-        frameRate = '60fps';
-        break;
-      case '2K':
-        resolution = '2560x1440 (2K)';
-        bitrate = `${Math.floor(Math.random() * 10 + 20)}.${Math.floor(Math.random() * 9)}Mbps`;
-        frameRate = '60fps';
-        break;
-      case '1080p':
-        resolution = '1920x1080 (1080p)';
-        bitrate = `${Math.floor(Math.random() * 5 + 8)}.${Math.floor(Math.random() * 9)}Mbps`;
-        frameRate = '60fps';
-        break;
-      case '720p':
-        resolution = '1280x720 (720p)';
-        bitrate = `${Math.floor(Math.random() * 3 + 5)}.${Math.floor(Math.random() * 9)}Mbps`;
-        frameRate = '30fps';
-        break;
-      case '480p':
-        resolution = '854x480 (480p)';
-        bitrate = `${Math.floor(Math.random() * 2 + 2)}.${Math.floor(Math.random() * 9)}Mbps`;
-        frameRate = '30fps';
-        break;
-      case '360p':
-        resolution = '640x360 (360p)';
-        bitrate = `${Math.floor(Math.random() * 1 + 1)}.${Math.floor(Math.random() * 9)}Mbps`;
-        frameRate = '30fps';
-        break;
-      case 'auto':
-      default:
-        // For auto, we'll simulate the highest quality based on "network conditions"
-        const qualities = ['8K', '4K', '2K', '1080p', '720p', '480p', '360p'];
-        const randomIndex = Math.floor(Math.random() * 4); // Bias toward higher qualities
-        const autoQuality = qualities[randomIndex];
-        
-        // Recursively call with the selected quality
-        if (autoQuality !== 'auto') {
-          changeQuality(autoQuality);
-          return;
-        } else {
-          resolution = '1920x1080 (1080p)';
-          bitrate = '8.5Mbps';
-          frameRate = '60fps';
-        }
-    }
-    
-    // Update video info display
-    setVideoInfo(prev => ({
-      ...prev,
-      resolution,
-      bitrate,
-      frameRate
-    }));
-    
-    // Close settings menu
-    setShowSettings(false);
-    
-    // Show a quality change notification
-    setShowQualityNotification(true);
-    setTimeout(() => setShowQualityNotification(false), 3000);
-    
-    // Simulate buffering when changing to higher qualities
-    if (['8K', '4K', '2K'].includes(quality)) {
-      const player = playerRef.current;
-      if (player) {
-        // Save current time and play state
-        const currentTime = player.currentTime();
-        const wasPlaying = !player.paused();
-        
-        if (wasPlaying) {
-          player.pause();
-        }
-        
-        // Update buffering stats
-        setPlaybackStats(prev => ({
-          ...prev,
-          bufferingEvents: prev.bufferingEvents + 1
-        }));
-        
-        // Simulate buffering with a longer delay for higher resolutions
-        const bufferingDelay = quality === '8K' ? 2000 : (quality === '4K' ? 1500 : 1000);
-        
-        setTimeout(() => {
-          // In a real implementation, this would be where you'd switch video sources
-          if (player) {
-            player.currentTime(currentTime);
-            if (wasPlaying) {
-              player.play().catch((err: Error) => console.error('Error playing after quality change:', err));
-            }
-          }
-        }, bufferingDelay);
-      }
-    } else {
-      const player = playerRef.current;
-      if (player) {
-        // Save current time and play state
-        const currentTime = player.currentTime();
-        const wasPlaying = !player.paused();
-        
-        // Simulate quality change with a small delay
-        setTimeout(() => {
-          if (player) {
-            player.currentTime(currentTime);
-            if (wasPlaying) {
-              player.play().catch((err: Error) => console.error('Error playing after quality change:', err));
-            }
-          }
-        }, 300);
-      }
-    }
-  };
+  // changeQuality function moved above
 
   // Debounce fullscreen toggle to prevent rapid clicks
   const debouncedHandleFullscreen = () => {
@@ -1091,16 +1347,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setBookmarkLabel('');
   };
 
-  // Jump to bookmark
-  const jumpToBookmark = (time: number) => {
-    const player = playerRef.current;
-    if (!player) return;
-    
-    player.currentTime(time);
-    if (player.paused()) {
-      player.play().catch((err: Error) => console.error('Error playing video:', err));
-    }
-  };
+  // jumpToBookmark function moved above
 
   // Update playback statistics
   useEffect(() => {
@@ -1511,7 +1758,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       {/* Futuristic overlay text */}
       <div className={styles.overlayText}>
-        <div>FUTURISTIC PLAYER v2.0</div>
+        <div>vcXvp v2.0</div>
         <div>FORMAT: {videoInfo.codec}</div>
         <div>RES: {videoInfo.resolution} | {videoInfo.frameRate}</div>
         <div className={styles.qualityIndicator}>
@@ -1890,6 +2137,21 @@ Solutions:
             >
               <FaEye />
             </motion.button>
+            
+            {/* Voice Control */}
+            <VoiceControl
+              isListening={voiceState.isListening}
+              isSupported={voiceState.isSupported}
+              status={voiceState.status}
+              lastCommand={voiceState.lastCommand}
+              voiceFeedbackEnabled={voiceFeedbackEnabled}
+              onToggleListening={voiceActions.toggleListening}
+              onToggleVoiceFeedback={(enabled) => {
+                setVoiceFeedbackEnabled(enabled);
+                voiceActions.setVoiceFeedback(enabled);
+              }}
+              onShowCommands={() => setShowVoiceCommands(true)}
+            />
             
             {/* Keyboard Shortcuts Guide Button */}
             <motion.button 
@@ -2462,6 +2724,12 @@ Solutions:
           </div>
         </div>
       )}
+
+      {/* Voice Commands Modal */}
+      <VoiceCommandsModal
+        isOpen={showVoiceCommands}
+        onClose={() => setShowVoiceCommands(false)}
+      />
     </div>
   );
 };

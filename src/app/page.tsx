@@ -1,25 +1,29 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import VideoPlayer from '@/components/VideoPlayer';
+'use client';
+
+import * as React from 'react';
+import VideoPlayer from '@/components/VideoPlayer/VideoPlayer';
 import Playlist, { PlaylistItem } from '@/components/VideoPlayer/Playlist';
 import ParticlesBackground from '@/components/ParticlesBackground';
 import { validateVideoFile } from '@/utils/videoUtils';
 import { FaFileUpload } from 'react-icons/fa';
 import { motion } from 'framer-motion';
+import VoiceCommandsModal from '@/components/VoiceCommandsModal';
 
 export default function Home() {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [showFeatures, setShowFeatures] = useState(false);
-  const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
-  const [currentVideo, setCurrentVideo] = useState<PlaylistItem | null>(null);
-  const [sortOrder, setSortOrder] = useState<'recent' | 'name'>('recent');
-  const [videoError, setVideoError] = useState<string | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [showWelcomeTutorial, setShowWelcomeTutorial] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{fileName: string, progress: number} | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [isPlaying, setIsPlaying] = React.useState(false);
+  const [showFeatures, setShowFeatures] = React.useState(false);
+  const [playlistItems, setPlaylistItems] = React.useState<PlaylistItem[]>([]);
+  const [currentVideo, setCurrentVideo] = React.useState<PlaylistItem | null>(null);
+  const [sortOrder, setSortOrder] = React.useState<'recent' | 'name'>('recent');
+  const [videoError, setVideoError] = React.useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = React.useState(false);
+  const [showWelcomeTutorial, setShowWelcomeTutorial] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState<{fileName: string, progress: number} | null>(null);
+  const [showVoiceCommands, setShowVoiceCommands] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const folderInputRef = React.useRef<HTMLInputElement>(null);
 
   // Utility function to format file size
   const formatFileSize = (bytes: number): string => {
@@ -31,7 +35,7 @@ export default function Home() {
   };
 
   // Load saved videos from localStorage on component mount
-  useEffect(() => {
+  React.useEffect(() => {
     const loadSavedVideos = () => {
       try {
         const savedVideosJson = localStorage.getItem('futuristicPlayer_videos');
@@ -65,7 +69,7 @@ export default function Home() {
   }, []); // Remove playlistItems.length dependency to prevent infinite re-renders
 
   // Save video paths to localStorage whenever the playlist changes
-  useEffect(() => {
+  React.useEffect(() => {
     if (playlistItems.length > 0) {
       try {
         // Save file paths instead of blob URLs
@@ -85,7 +89,7 @@ export default function Home() {
   }, [playlistItems]);
 
   // Save the currently playing video ID
-  useEffect(() => {
+  React.useEffect(() => {
     if (currentVideo) {
       localStorage.setItem('futuristicPlayer_lastPlayed', currentVideo.id);
     }
@@ -95,7 +99,7 @@ export default function Home() {
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
 
-  const handleVideoSelect = (video: PlaylistItem) => {
+  const handleVideoSelect = React.useCallback((video: PlaylistItem) => {
     // If no src, prompt user to select the file again
     if (!video.src) {
       const input = document.createElement('input');
@@ -136,7 +140,7 @@ export default function Home() {
     setPlaylistItems(updatedPlaylist);
     setCurrentVideo(video);
     setIsPlaying(true);
-  };
+  }, [playlistItems]);
 
   // Process files function that can be used by both file input and drag & drop
   const processFiles = (files: FileList | File[]) => {
@@ -372,7 +376,7 @@ export default function Home() {
   };
 
   // Sort playlist items based on current sort order
-  const sortedPlaylistItems = useMemo(() => {
+  const sortedPlaylistItems = React.useMemo(() => {
     if (sortOrder === 'recent') {
       return [...playlistItems].sort((a, b) => {
         const timeA = a.lastAccessed || 0;
@@ -391,6 +395,8 @@ export default function Home() {
     setSortOrder(prevOrder => prevOrder === 'recent' ? 'name' : 'recent');
   };
 
+
+
   return (
     <main
       className={`min-h-screen bg-black text-white transition-all duration-300 ${
@@ -402,7 +408,7 @@ export default function Home() {
     >
       {/* Hero section with futuristic background */}
       <div className="relative overflow-hidden">
-        <div className="absolute inset-0 z-0 bg-gradient-to-br from-black to-gray-900">
+        <div className="absolute inset-0 z-0 bg-black">
           {/* Animated tech background */}
           <div className="absolute inset-0 opacity-10">
             <div className="absolute top-0 left-0 w-full h-full bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMtNi4wNzUgMC0xMSA0LjkyNS0xMSAxMXM0LjkyNSAxMSAxMSAxMSAxMS00LjkyNSAxMS0xMS00LjkyNS0xMS0xMS0xMXptMC0yYzcuMTggMCAxMyA1LjgyIDEzIDEzcy01LjgyIDEzLTEzIDEzLTEzLTUuODItMTMtMTMgNS44Mi0xMyAxMy0xM3ptMC0yYzkuMzg5IDAgMTcgNy42MSAxNyAxN3MtNy42MSAxNy0xNyAxNy0xNy03LjYxLTE3LTE3IDcuNjEtMTcgMTctMTd6IiBmaWxsPSIjZmZmIi8+PC9nPjwvc3ZnPg==')]"></div>
@@ -453,14 +459,14 @@ export default function Home() {
             className="text-center"
           >
             <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-4 glow-text">
-              <span className="block text-white relative">
-                Futuristic Player
+              <span className="block text-white relative hover:text-cyan-400 transition-colors duration-300 cursor-default hover:drop-shadow-[0_0_10px_rgba(0,255,255,0.8)]">
+                vcXvp
                 <span className="absolute -bottom-2 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white to-transparent"></span>
                 <span className="absolute -left-4 top-1/2 w-2 h-2 bg-white rounded-full animate-pulse"></span>
                 <span className="absolute -right-4 top-1/2 w-2 h-2 bg-white rounded-full animate-pulse"></span>
               </span>
             </h1>
-            <p className="text-xl md:text-2xl max-w-3xl mx-auto text-gray-300 mb-8">
+            <p className="text-xl md:text-2xl max-w-3xl mx-auto text-gray-300 mb-8 hover:text-blue-300 transition-colors duration-300 cursor-default">
               Experience the next generation of video playback with our hyper-futuristic, 
               feature-rich player that supports local video files.
             </p>
@@ -469,34 +475,36 @@ export default function Home() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowFeatures(!showFeatures)}
-                className="px-6 py-3 bg-gray-200 text-black rounded-full font-medium border border-gray-300 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,255,255,0.5)] tech-border"
+                className="px-6 py-3 bg-gray-900 text-white rounded-full font-medium border border-cyan-400 relative overflow-hidden group hover:shadow-[0_0_20px_rgba(0,255,255,0.8)] hover:border-cyan-300 transition-all duration-300"
               >
-                <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-700"></span>
-                <span className="absolute inset-0 border border-white opacity-0 group-hover:opacity-20 rounded-full scale-90 group-hover:scale-100 transition-all duration-300"></span>
+                <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-cyan-400 to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-700 opacity-30"></span>
+                <span className="absolute inset-0 border border-cyan-400 opacity-0 group-hover:opacity-40 rounded-full scale-90 group-hover:scale-100 transition-all duration-300"></span>
                 <span className="relative z-10">{showFeatures ? 'Hide Features' : 'Explore Features'}</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={openFileSelector}
-                className="px-6 py-3 bg-gray-800 rounded-full font-medium flex items-center gap-2 border border-gray-600 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(192,192,192,0.3)] tech-border"
+                className="px-6 py-3 bg-gray-900 rounded-full font-medium flex items-center gap-2 border border-blue-400 relative overflow-hidden group hover:shadow-[0_0_20px_rgba(0,100,255,0.8)] hover:border-blue-300 transition-all duration-300"
               >
-                <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-gray-700 to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-700"></span>
-                <span className="absolute inset-0 border border-white opacity-0 group-hover:opacity-20 rounded-full scale-90 group-hover:scale-100 transition-all duration-300"></span>
+                <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-blue-400 to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-700 opacity-30"></span>
+                <span className="absolute inset-0 border border-blue-400 opacity-0 group-hover:opacity-40 rounded-full scale-90 group-hover:scale-100 transition-all duration-300"></span>
                 <span className="relative z-10 flex items-center gap-2"><FaFileUpload /> Select Videos</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={openFolderSelector}
-                className="px-6 py-3 bg-gray-700 rounded-full font-medium flex items-center gap-2 border border-gray-500 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(192,192,192,0.3)] tech-border"
+                className="px-6 py-3 bg-gray-900 rounded-full font-medium flex items-center gap-2 border border-purple-400 relative overflow-hidden group hover:shadow-[0_0_20px_rgba(128,0,255,0.8)] hover:border-purple-300 transition-all duration-300"
               >
-                <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-gray-600 to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-700"></span>
-                <span className="absolute inset-0 border border-white opacity-0 group-hover:opacity-20 rounded-full scale-90 group-hover:scale-100 transition-all duration-300"></span>
+                <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-purple-400 to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-700 opacity-30"></span>
+                <span className="absolute inset-0 border border-purple-400 opacity-0 group-hover:opacity-40 rounded-full scale-90 group-hover:scale-100 transition-all duration-300"></span>
                 <span className="relative z-10 flex items-center gap-2">📁 Open Folder</span>
               </motion.button>
             </div>
-            <p className="text-sm text-gray-500 mt-4">
+            
+
+            <p className="text-sm text-gray-500 mt-4 hover:text-purple-400 transition-colors duration-300 cursor-default">
               Or drag and drop video files anywhere on this page
             </p>
             <button
@@ -515,7 +523,7 @@ export default function Home() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className="py-16 bg-gray-900"
+          className="py-16 bg-black"
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
             <h2 className="text-3xl md:text-4xl font-bold text-center mb-12 text-white relative inline-block">
@@ -573,7 +581,7 @@ export default function Home() {
         <div className="fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center">
           <div className="bg-gray-900 border border-blue-500 rounded-xl p-8 max-w-2xl mx-4 text-center">
             <div className="text-6xl mb-6">🚀</div>
-            <h2 className="text-3xl font-bold mb-4 text-blue-400">Welcome to Futuristic Player!</h2>
+            <h2 className="text-3xl font-bold mb-4 text-blue-400">Welcome to vcXvp!</h2>
             <div className="text-left space-y-4 mb-6">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">📁</span>
@@ -849,11 +857,17 @@ export default function Home() {
         />
       </div>
 
+      {/* Voice Commands Modal */}
+      <VoiceCommandsModal
+        isOpen={showVoiceCommands}
+        onClose={() => setShowVoiceCommands(false)}
+      />
+
       {/* Footer */}
       <footer className="py-8 bg-black border-t border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 text-center">
           <p className="text-gray-400">
-            © {new Date().getFullYear()} Futuristic Player. Built with Next.js and React.
+            © {new Date().getFullYear()} vcXvp. Built with Next.js and React.
           </p>
         </div>
       </footer>
@@ -861,8 +875,13 @@ export default function Home() {
   );
 }
 
-// Features data
+// Add voice control to features
 const features = [
+  {
+    title: '🎤 Voice Control',
+    description: 'Control the player with natural voice commands. Say "play", "volume up", "jump to 2 minutes" and more.',
+    icon: '🎤',
+  },
   {
     title: 'Local File Playback',
     description: 'Upload and play video files directly from your device with support for various formats.',

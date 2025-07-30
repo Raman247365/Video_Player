@@ -4,12 +4,13 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/react';
 import Navbar from '@/components/Navbar';
+import CommandPromptProvider from '@/components/CommandPromptProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Futuristic Video Player',
-  description: 'A hyper futuristic, feature-rich video player built with Next.js',
+  title: 'vcXvp',
+  description: 'AI-powered voice-controlled video player built with Next.js',
 };
 
 export default function RootLayout({
@@ -20,9 +21,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} pt-16`}>
-        <Navbar />
-        {children}
-        <Analytics />
+        <CommandPromptProvider>
+          <Navbar />
+          {children}
+          <Analytics />
+        </CommandPromptProvider>
       </body>
     </html>
   );
