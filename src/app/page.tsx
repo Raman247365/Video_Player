@@ -6,7 +6,7 @@ import * as React from 'react';
 import VideoPlayer from '@/components/VideoPlayer/VideoPlayer';
 import Playlist, { PlaylistItem } from '@/components/VideoPlayer/Playlist';
 import ParticlesBackground from '@/components/ParticlesBackground';
-import { validateVideoFile } from '@/utils/videoUtils';
+import { validateVideoFile, uploadToServer } from '@/utils/videoUtils';
 import { FaFileUpload } from 'react-icons/fa';
 import { motion } from 'framer-motion';
 import VoiceCommandsModal from '@/components/VoiceCommandsModal';
@@ -143,13 +143,13 @@ export default function Home() {
   }, [playlistItems]);
 
   // Process files function that can be used by both file input and drag & drop
-  const processFiles = (files: FileList | File[]) => {
+  const processFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
 
     const newPlaylistItems: PlaylistItem[] = [];
     const fileArray = Array.from(files);
 
-    fileArray.forEach((file) => {
+    for (const file of fileArray) {
       // Show upload progress
       setUploadProgress({ fileName: file.name, progress: 0 });
 
@@ -182,8 +182,14 @@ export default function Home() {
 
 
 
-      // Create a blob URL for the file
-      const fileUrl = URL.createObjectURL(file);
+      // Upload to Express.js server for streaming
+      let fileUrl;
+      try {
+        fileUrl = await uploadToServer(file);
+      } catch (error) {
+        // Fallback to blob URL
+        fileUrl = URL.createObjectURL(file);
+      }
 
       // Extract basic metadata
       const metadata = {
@@ -257,7 +263,7 @@ export default function Home() {
       };
       
       newPlaylistItems.push(newItem);
-    });
+    }
 
     // Add new videos to playlist
     const updatedPlaylist = [...playlistItems, ...newPlaylistItems];
@@ -279,13 +285,13 @@ export default function Home() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    processFiles(files);
+    await processFiles(files);
   };
 
-  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFolderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
     
@@ -350,7 +356,7 @@ export default function Home() {
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
@@ -364,7 +370,7 @@ export default function Home() {
     }
 
     // Process dropped files
-    processFiles(videoFiles);
+    await processFiles(videoFiles);
   };
 
   // Function to clear all videos from playlist and storage

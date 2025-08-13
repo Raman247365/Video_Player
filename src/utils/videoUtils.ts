@@ -2,6 +2,24 @@
  * Video utility functions for format detection, validation, and conversion suggestions
  */
 
+// Express.js streaming integration
+export const createStreamingUrl = (filename: string): string => {
+  return `http://localhost:3003/stream/${filename}`;
+};
+
+export const uploadToServer = async (file: File): Promise<string> => {
+  const formData = new FormData();
+  formData.append('video', file);
+  
+  const response = await fetch('http://localhost:3003/upload', {
+    method: 'POST',
+    body: formData
+  });
+  
+  const result = await response.json();
+  return result.url;
+};
+
 export interface VideoFormatInfo {
   extension: string;
   mimeType: string;

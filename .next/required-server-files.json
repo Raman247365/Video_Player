@@ -96,7 +96,7 @@
         "transform": "lodash/{{member}}"
       }
     },
-    "outputFileTracingRoot": "e:\\Video-Player-NeXT.js-main",
+    "outputFileTracingRoot": "e:\\CODE\\PROJECTS\\Video_Player",
     "experimental": {
       "nodeMiddleware": false,
       "cacheLife": {
@@ -279,10 +279,10 @@
     "bundlePagesRouterDependencies": false,
     "configFileName": "next.config.js",
     "turbopack": {
-      "root": "e:\\Video-Player-NeXT.js-main"
+      "root": "e:\\CODE\\PROJECTS\\Video_Player"
     }
   },
-  "appDir": "e:\\Video-Player-NeXT.js-main",
+  "appDir": "e:\\CODE\\PROJECTS\\Video_Player",
   "relativeAppDir": "",
   "files": [
     ".next\\routes-manifest.json",
